@@ -122,7 +122,13 @@ async function show(id, isRoot) {
     $('content').innerHTML = ''; return;
   }
   if (my !== session) return;
-  res = { ...res, folders: res.folders.filter(f => f.count > 0) }; // 空資料夾不顯示
+  res = { ...res, folders: res.folders.filter(f => f.count > 0 || f.subCount > 0) }; // 空資料夾不顯示
+  // 子資料夾清單已經一起拿到了，先存起來，點進去就不用再等
+  res.folders.forEach(f => {
+    if (f.files && !f.subCount && !folderCache[f.id]) {
+      folderCache[f.id] = Promise.resolve({ ok: true, folderName: f.name, folders: [], files: f.files });
+    }
+  });
   $('sub').className = '';
   folderName = res.folderName;
   $('title').textContent = folderName;
@@ -170,7 +176,7 @@ async function prepareFiles(list, my) {
   const loaded = new Array(list.length);
   let done = 0;
   try {
-    await pool(list, 8, async (f, i) => {
+    await pool(list, 10, async (f, i) => {
       const file = await loadFile(f);
       if (my !== session) return;
       loaded[i] = file;
