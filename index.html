@@ -60,10 +60,18 @@ let files = [], folderName = 'images';
 
 function hint(msg, err) { $('hint').textContent = msg; $('hint').className = err ? 'err' : ''; }
 function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function b64ToFile(b64, name) {
-  const bin = atob(b64), bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new File([bytes], name, { type: 'image/png' });
+const IMG = id => 'https://lh3.googleusercontent.com/d/' + id;
+async function loadFile(f, tries = 3) {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(IMG(f.id) + '=s0');
+      if (!r.ok) throw new Error(r.status);
+      return new File([await r.blob()], f.name, { type: 'image/png' });
+    } catch (e) {
+      if (i >= tries - 1) throw new Error('圖片下載失敗，請重新整理再試一次');
+      await new Promise(ok => setTimeout(ok, 800 * (i + 1)));
+    }
+  }
 }
 function canShareFiles() {
   try { return !!(navigator.canShare && files.length && navigator.canShare({ files })); } catch { return false; }
@@ -74,15 +82,24 @@ if (inLine) $('lineTip').style.display = 'block';
 // 開頁就先把圖片載好，按鈕按下去才能立刻跳出分享選單（iOS 要求）
 fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
   .then(r => r.json())
-  .then(res => {
+  .then(async res => {
     if (!res.ok) throw new Error(res.error);
     folderName = res.folderName;
-    files = res.files.map(f => b64ToFile(f.data, f.name));
+    const list = res.files;
     $('title').textContent = folderName;
     document.title = folderName;
-    $('sub').textContent = `共 ${files.length} 張圖片`;
-    $('grid').innerHTML = files.map(f => `
-      <div class="card"><img src="${URL.createObjectURL(f)}" alt=""><div>${esc(f.name)}</div></div>`).join('');
+    $('sub').textContent = `共 ${list.length} 張圖片`;
+    // 先顯示縮圖，客戶馬上看得到
+    $('grid').innerHTML = list.map(f => `
+      <div class="card"><img src="${IMG(f.id)}=w400" alt=""><div>${esc(f.name)}</div></div>`).join('');
+
+    // 同時下載原圖
+    let done = 0;
+    $('btn').textContent = `準備中… 0 / ${list.length}`;
+    files = await Promise.all(list.map(f => loadFile(f).then(file => {
+      $('btn').textContent = `準備中… ${++done} / ${list.length}`;
+      return file;
+    })));
 
     $('btn').disabled = false;
     if (isMobile && canShareFiles()) {
@@ -97,8 +114,7 @@ fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
     }
   })
   .catch(e => {
-    $('title').textContent = '無法載入圖片';
-    $('grid').innerHTML = '';
+    if (!files.length && !$('grid').querySelector('img')) { $('title').textContent = '無法載入圖片'; $('grid').innerHTML = ''; }
     $('btn').textContent = '無法下載';
     hint(e.message || '網路錯誤，請重新整理再試一次', true);
   });
