@@ -10,7 +10,7 @@
 <style>
   /* Minimal Brutalism — 只用黑、灰、白 */
   :root {
-    --ink:#000; --gray:#6b6b6b; --soft:#e9e9e9; --bg:#fff; --rule:3px solid #000; --hair:2px solid #000;
+    --ink:#000; --gray:#6b6b6b; --soft:#e9e9e9; --bg:#fff; --base:#efefef; --rule:3px solid #000; --hair:2px solid #000;
     /* 英文 Didot（沒有 Didot 的裝置用 Bodoni Moda 代替），中文 思源宋體 */
     --serif:"Didot","Bodoni 72","Bodoni Moda","Source Han Serif TC","Noto Serif TC","思源宋體","Songti TC",serif;
   }
@@ -44,8 +44,9 @@
   }
 
   .card { background:var(--bg); border:0; border-right:var(--hair); border-bottom:var(--hair); border-radius:0; overflow:hidden; }
+  /* 去背 PNG 放在實色灰底上，不顯示透明網格 */
   .card img { width:100%; aspect-ratio:1; object-fit:contain; display:block; border-bottom:var(--hair);
-    background:repeating-conic-gradient(var(--soft) 0% 25%, #fff 0% 50%) 50%/16px 16px; }
+    padding:8%; background:var(--base); }
   .card img:not([src]) { background:var(--soft); animation:pulse 1.2s ease-in-out infinite; }
   .card div { padding:8px 10px; font-size:13px; color:var(--gray); word-break:break-all; }
 
