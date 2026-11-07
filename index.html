@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>圖片下載</title>
+<style>
+  :root { --ink:#222; --muted:#8a8780; --line:#e6e3dc; --bg:#faf9f6; --accent:#1f6f5c; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; color:var(--ink); background:var(--bg); }
+  .wrap { max-width:960px; margin:0 auto; padding:28px 16px 140px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  #sub { color:var(--muted); font-size:14px; margin:0 0 20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  @media (max-width:480px) { .grid { grid-template-columns:repeat(2,1fr); } }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .card img { width:100%; aspect-ratio:1; object-fit:contain; display:block;
+    background:repeating-conic-gradient(#f1efea 0% 25%, #fff 0% 50%) 50%/16px 16px; }
+  .card div { padding:6px 8px; font-size:11px; color:#666; word-break:break-all; }
+  .dock { position:fixed; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+          background:rgba(250,249,246,.94); backdrop-filter:blur(8px); border-top:1px solid var(--line); text-align:center; }
+  #btn { width:100%; max-width:420px; padding:16px; font-size:17px; font-weight:600; border:0; border-radius:12px;
+         background:var(--accent); color:#fff; cursor:pointer; }
+  #btn:disabled { opacity:.45; }
+  #hint { font-size:13px; color:var(--muted); margin-top:8px; min-height:18px; }
+  #hint.err { color:#b3261e; }
+  .banner { background:#fff4d6; border:1px solid #f0d58a; border-radius:10px; padding:12px; font-size:14px; margin-bottom:16px; display:none; }
+  .spin { width:28px; height:28px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+          animation:r .8s linear infinite; margin:40px auto; }
+  @keyframes r { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner" id="lineTip">你正在 LINE 裡面開啟，可能無法儲存。請點右上角「⋯」→「在瀏覽器中開啟」。</div>
+  <h1 id="title">圖片載入中…</h1>
+  <p id="sub"></p>
+  <div id="grid" class="grid"><div class="spin"></div></div>
+</div>
+
+<div class="dock">
+  <button id="btn" disabled>載入中…</button>
+  <div id="hint"></div>
+</div>
+
+<script>
+// ▼ 換成你的 Apps Script 部署網址（結尾 /exec）
+const API = 'https://script.google.com/macros/s/AKfycbwg-6C1gZP9VdbWCAaUfIJ9bO4dbPBz5bRP9KgZyj858miux_6v0knYQ4DldYgKnkR4/exec';
+
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const folderId = params.get('id') || '';
+const ua = navigator.userAgent;
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(ua);
+const isMobile = isIOS || isAndroid;
+const inLine = /\bLine\//i.test(ua);
+
+let files = [], folderName = 'images';
+
+function hint(msg, err) { $('hint').textContent = msg; $('hint').className = err ? 'err' : ''; }
+function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function b64ToFile(b64, name) {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: 'image/png' });
+}
+function canShareFiles() {
+  try { return !!(navigator.canShare && files.length && navigator.canShare({ files })); } catch { return false; }
+}
+
+if (inLine) $('lineTip').style.display = 'block';
+
+// 開頁就先把圖片載好，按鈕按下去才能立刻跳出分享選單（iOS 要求）
+fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
+  .then(r => r.json())
+  .then(res => {
+    if (!res.ok) throw new Error(res.error);
+    folderName = res.folderName;
+    files = res.files.map(f => b64ToFile(f.data, f.name));
+    $('title').textContent = folderName;
+    document.title = folderName;
+    $('sub').textContent = `共 ${files.length} 張圖片`;
+    $('grid').innerHTML = files.map(f => `
+      <div class="card"><img src="${URL.createObjectURL(f)}" alt=""><div>${esc(f.name)}</div></div>`).join('');
+
+    $('btn').disabled = false;
+    if (isMobile && canShareFiles()) {
+      $('btn').textContent = `存到相簿（${files.length} 張）`;
+      hint(isIOS ? `按下後選「儲存 ${files.length} 張影像」` : '按下後選擇「相簿」或「儲存到裝置」');
+    } else if (isMobile) {
+      $('btn').textContent = '下載全部（zip）';
+      hint('這個瀏覽器不支援直接存相簿；也可以長按每張圖片儲存');
+    } else {
+      $('btn').textContent = `下載全部圖片（${files.length} 張）`;
+      hint('會下載成一個 zip 檔');
+    }
+  })
+  .catch(e => {
+    $('title').textContent = '無法載入圖片';
+    $('grid').innerHTML = '';
+    $('btn').textContent = '無法下載';
+    hint(e.message || '網路錯誤，請重新整理再試一次', true);
+  });
+
+$('btn').onclick = async () => {
+  if (isMobile && canShareFiles()) {
+    try {
+      await navigator.share({ files });
+      hint('完成！到相簿看看吧');
+    } catch (e) {
+      if (e.name !== 'AbortError') hint('沒有成功，請再按一次，或長按圖片儲存', true);
+    }
+    return;
+  }
+  // 電腦：打包 zip
+  $('btn').disabled = true; hint('打包中…');
+  try {
+    if (!window.JSZip) await new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+      s.onload = ok; s.onerror = () => bad(new Error('打包工具載入失敗'));
+      document.head.appendChild(s);
+    });
+    const zip = new JSZip();
+    const used = {};
+    files.forEach(f => {
+      let n = f.name;
+      if (used[n]) { const d = n.lastIndexOf('.'); n = n.slice(0, d) + ` (${++used[f.name]})` + n.slice(d); } else used[n] = 1;
+      zip.file(n, f);
+    });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = folderName + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    hint('下載完成');
+  } catch (e) {
+    hint(e.message, true);
+  }
+  $('btn').disabled = false;
+};
+</script>
+</body>
+</html>
