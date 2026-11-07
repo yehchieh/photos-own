@@ -23,6 +23,9 @@
   .folder:active { transform:scale(.98); }
   .folder div { font-size:14px; color:var(--ink); padding:10px; }
   .folder small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+  .soon { cursor:default; opacity:.6; }
+  .soon .ph { aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:15px; color:var(--muted);
+    background:repeating-linear-gradient(45deg,#f1efea 0 10px,#f7f5f0 10px 20px); padding:0; }
   .section { font-size:13px; color:var(--muted); margin:24px 0 10px; }
   .dock { position:fixed; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
           background:rgba(250,249,246,.94); backdrop-filter:blur(8px); border-top:1px solid var(--line); text-align:center; display:none; }
@@ -69,10 +72,11 @@ const folderCache = {};
 
 function hint(msg, err) { $('hint').textContent = msg; $('hint').className = err ? 'err' : ''; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function b64ToFile(b64, name) {
+function b64ToFile(b64, name, type) {
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new File([bytes], name, { type: 'image/png' });
+  type = type || (/\.jpe?g$/i.test(name) ? 'image/jpeg' : 'image/png');
+  return new File([bytes], name, { type });
 }
 async function api(q) {
   const res = await fetch(API + '?' + q).then(r => r.json());
@@ -83,7 +87,7 @@ async function loadFile(f, tries = 3) {
   for (let i = 0; ; i++) {
     try {
       const res = await api('file=' + encodeURIComponent(f.id));
-      return b64ToFile(res.data, f.name);
+      return b64ToFile(res.data, f.name, res.type || f.type);
     } catch (e) {
       if (i >= tries - 1) throw new Error('圖片下載失敗，請重新整理再試一次');
       await new Promise(ok => setTimeout(ok, 1000 * (i + 1)));
@@ -122,8 +126,7 @@ async function show(id, isRoot) {
     $('content').innerHTML = ''; return;
   }
   if (my !== session) return;
-  res = { ...res, folders: res.folders.filter(f => f.count > 0 || f.subCount > 0) }; // 空資料夾不顯示
-  // 子資料夾清單已經一起拿到了，先存起來，點進去就不用再等
+    // 子資料夾清單已經一起拿到了，先存起來，點進去就不用再等
   res.folders.forEach(f => {
     if (f.files && !f.subCount && !folderCache[f.id]) {
       folderCache[f.id] = Promise.resolve({ ok: true, folderName: f.name, folders: [], files: f.files });
@@ -137,11 +140,16 @@ async function show(id, isRoot) {
   let html = '';
   if (res.folders.length) {
     $('sub').textContent = res.files.length ? '' : '請選擇要下載的資料夾';
-    html += (res.files.length ? '<div class="section">資料夾</div>' : '') + '<div class="grid">' + res.folders.map(f => `
+    html += (res.files.length ? '<div class="section">資料夾</div>' : '') + '<div class="grid">' + res.folders.map(f =>
+      (f.count || f.subCount) ? `
       <button class="card folder" data-id="${esc(f.id)}">
         <img ${f.cover ? `data-cover="${esc(f.cover)}"` : 'src="data:image/gif;base64,R0lGODlhAQABAAAAACw="'} alt="">
-        <div>${esc(f.name)}<small>${f.count} 張</small></div>
-      </button>`).join('') + '</div>';
+        <div>${esc(f.name)}<small>${f.count ? f.count + ' 張' : '多個資料夾'}</small></div>
+      </button>` : `
+      <div class="card folder soon">
+        <div class="ph">準備中</div>
+        <div>${esc(f.name)}<small>圖片準備中，請稍後再來</small></div>
+      </div>`).join('') + '</div>';
   }
   if (res.files.length) {
     if (!res.folders.length) $('sub').textContent = `共 ${res.files.length} 張圖片`;
@@ -149,9 +157,10 @@ async function show(id, isRoot) {
       '<div class="grid">' + res.files.map((f, i) => `
       <div class="card"><img id="img${i}" alt=""><div>${esc(f.name)}</div></div>`).join('') + '</div>';
   }
+  if (!html) html = '<p style="color:var(--muted);text-align:center;margin:60px 0">圖片準備中，請稍後再來</p>';
   $('content').innerHTML = html;
 
-  $('content').querySelectorAll('.folder').forEach(b => b.onclick = () => {
+  $('content').querySelectorAll('button.folder').forEach(b => b.onclick = () => {
     history.pushState({ id: b.dataset.id }, '', '?id=' + encodeURIComponent(rootId) + '&f=' + encodeURIComponent(b.dataset.id));
     show(b.dataset.id, false);
   });
