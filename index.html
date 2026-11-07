@@ -8,69 +8,81 @@
   :root { --ink:#222; --muted:#8a8780; --line:#e6e3dc; --bg:#faf9f6; --accent:#1f6f5c; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; color:var(--ink); background:var(--bg); }
-  .wrap { max-width:960px; margin:0 auto; padding:28px 16px 140px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 140px; }
+  #back { display:none; background:none; border:0; padding:6px 0; margin-bottom:8px; font-size:15px; color:var(--accent); cursor:pointer; }
   h1 { font-size:22px; margin:0 0 4px; }
   #sub { color:var(--muted); font-size:14px; margin:0 0 20px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
   @media (max-width:480px) { .grid { grid-template-columns:repeat(2,1fr); } }
   .card { background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-  .card img:not([src]) { visibility:hidden; }
   .card img { width:100%; aspect-ratio:1; object-fit:contain; display:block;
     background:repeating-conic-gradient(#f1efea 0% 25%, #fff 0% 50%) 50%/16px 16px; }
+  .card img:not([src]) { background:#f1efea; animation:pulse 1.2s ease-in-out infinite; }
   .card div { padding:6px 8px; font-size:11px; color:#666; word-break:break-all; }
+  .folder { cursor:pointer; text-align:left; padding:0; font:inherit; color:inherit; }
+  .folder:active { transform:scale(.98); }
+  .folder div { font-size:14px; color:var(--ink); padding:10px; }
+  .folder small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+  .section { font-size:13px; color:var(--muted); margin:24px 0 10px; }
   .dock { position:fixed; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
-          background:rgba(250,249,246,.94); backdrop-filter:blur(8px); border-top:1px solid var(--line); text-align:center; }
+          background:rgba(250,249,246,.94); backdrop-filter:blur(8px); border-top:1px solid var(--line); text-align:center; display:none; }
   #btn { width:100%; max-width:420px; padding:16px; font-size:17px; font-weight:600; border:0; border-radius:12px;
          background:var(--accent); color:#fff; cursor:pointer; }
   #btn:disabled { opacity:.45; }
   #hint { font-size:13px; color:var(--muted); margin-top:8px; min-height:18px; }
-  #hint.err { color:#b3261e; }
+  .err { color:#b3261e !important; }
   .banner { background:#fff4d6; border:1px solid #f0d58a; border-radius:10px; padding:12px; font-size:14px; margin-bottom:16px; display:none; }
   .spin { width:28px; height:28px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%;
-          animation:r .8s linear infinite; margin:40px auto; }
+          animation:r .8s linear infinite; margin:40px auto; grid-column:1/-1; }
   @keyframes r { to { transform:rotate(360deg); } }
+  @keyframes pulse { 50% { opacity:.5; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="banner" id="lineTip">你正在 LINE 裡面開啟，可能無法儲存。請點右上角「⋯」→「在瀏覽器中開啟」。</div>
-  <h1 id="title">圖片載入中…</h1>
+  <button id="back">← 返回</button>
+  <h1 id="title">載入中…</h1>
   <p id="sub"></p>
-  <div id="grid" class="grid"><div class="spin"></div></div>
+  <div id="content"><div class="grid"><div class="spin"></div></div></div>
 </div>
 
-<div class="dock">
+<div class="dock" id="dock">
   <button id="btn" disabled>載入中…</button>
   <div id="hint"></div>
 </div>
 
 <script>
-// ▼ 換成你的 Apps Script 部署網址（結尾 /exec）
+// ▼ Apps Script 部署網址（結尾 /exec）
 const API = 'https://script.google.com/macros/s/AKfycby26iYK8y7DopOm2Vi-I9hKp0bsgu7SFUpwl5EGShHTGkIZF9OVWLxUSZ0BV4F89Ssi/exec';
 
 const $ = id => document.getElementById(id);
-const params = new URLSearchParams(location.search);
-const folderId = params.get('id') || '';
 const ua = navigator.userAgent;
 const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isAndroid = /Android/.test(ua);
 const isMobile = isIOS || isAndroid;
-const inLine = /\bLine\//i.test(ua);
+if (/\bLine\//i.test(ua)) $('lineTip').style.display = 'block';
 
-let files = [], folderName = 'images';
+const rootId = new URLSearchParams(location.search).get('id') || '';
+let files = [], folderName = 'images', session = 0;
+const folderCache = {};
 
 function hint(msg, err) { $('hint').textContent = msg; $('hint').className = err ? 'err' : ''; }
-function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function b64ToFile(b64, name) {
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new File([bytes], name, { type: 'image/png' });
 }
+async function api(q) {
+  const res = await fetch(API + '?' + q).then(r => r.json());
+  if (!res.ok) throw new Error(res.error);
+  return res;
+}
 async function loadFile(f, tries = 3) {
   for (let i = 0; ; i++) {
     try {
-      const res = await fetch(API + '?file=' + encodeURIComponent(f.id)).then(r => r.json());
-      if (!res.ok) throw new Error(res.error);
+      const res = await api('file=' + encodeURIComponent(f.id));
       return b64ToFile(res.data, f.name);
     } catch (e) {
       if (i >= tries - 1) throw new Error('圖片下載失敗，請重新整理再試一次');
@@ -78,76 +90,118 @@ async function loadFile(f, tries = 3) {
     }
   }
 }
-// 同時最多 limit 張，避免 Google 擋太多同時請求
-async function loadAll(list, limit, onEach) {
-  const result = new Array(list.length);
+async function pool(items, limit, fn) {
   let next = 0;
-  async function worker() {
-    while (next < list.length) {
-      const i = next++;
-      result[i] = await loadFile(list[i]);
-      onEach(i, result[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
-  return result;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; await fn(items[i], i); }
+  }));
 }
 function canShareFiles() {
   try { return !!(navigator.canShare && files.length && navigator.canShare({ files })); } catch { return false; }
 }
+async function getFolder(id) {
+  if (!folderCache[id]) folderCache[id] = api(id ? 'id=' + encodeURIComponent(id) : '').catch(e => { delete folderCache[id]; throw e; });
+  return folderCache[id];
+}
 
-if (inLine) $('lineTip').style.display = 'block';
+// ---------- 畫面 ----------
+async function show(id, isRoot) {
+  const my = ++session;
+  files = [];
+  $('dock').style.display = 'none';
+  $('back').style.display = isRoot ? 'none' : 'block';
+  $('title').textContent = '載入中…'; $('sub').textContent = '';
+  $('content').innerHTML = '<div class="grid"><div class="spin"></div></div>';
+  window.scrollTo(0, 0);
 
-// 開頁就先把圖片載好，按鈕按下去才能立刻跳出分享選單（iOS 要求）
-fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
-  .then(r => r.json())
-  .then(async res => {
-    if (!res.ok) throw new Error(res.error);
-    folderName = res.folderName;
-    const list = res.files;
-    $('title').textContent = folderName;
-    document.title = folderName;
-    $('sub').textContent = `共 ${list.length} 張圖片`;
-    // 先放空卡片，每張圖下載好就顯示
-    $('grid').innerHTML = list.map((f, i) => `
-      <div class="card"><img id="img${i}" alt=""><div>${esc(f.name)}</div></div>`).join('');
+  let res;
+  try { res = await getFolder(id); }
+  catch (e) {
+    if (my !== session) return;
+    $('title').textContent = '無法載入'; $('sub').textContent = e.message; $('sub').className = 'err';
+    $('content').innerHTML = ''; return;
+  }
+  if (my !== session) return;
+  res = { ...res, folders: res.folders.filter(f => f.count > 0) }; // 空資料夾不顯示
+  $('sub').className = '';
+  folderName = res.folderName;
+  $('title').textContent = folderName;
+  document.title = folderName;
 
-    let done = 0;
-    $('btn').textContent = `準備中… 0 / ${list.length}`;
-    files = await loadAll(list, 8, (i, file) => {
-      $('img' + i).src = URL.createObjectURL(file);
+  let html = '';
+  if (res.folders.length) {
+    $('sub').textContent = res.files.length ? '' : '請選擇要下載的資料夾';
+    html += (res.files.length ? '<div class="section">資料夾</div>' : '') + '<div class="grid">' + res.folders.map(f => `
+      <button class="card folder" data-id="${esc(f.id)}">
+        <img ${f.cover ? `data-cover="${esc(f.cover)}"` : 'src="data:image/gif;base64,R0lGODlhAQABAAAAACw="'} alt="">
+        <div>${esc(f.name)}<small>${f.count} 張</small></div>
+      </button>`).join('') + '</div>';
+  }
+  if (res.files.length) {
+    if (!res.folders.length) $('sub').textContent = `共 ${res.files.length} 張圖片`;
+    html += (res.folders.length ? `<div class="section">這裡的圖片（${res.files.length} 張）</div>` : '') +
+      '<div class="grid">' + res.files.map((f, i) => `
+      <div class="card"><img id="img${i}" alt=""><div>${esc(f.name)}</div></div>`).join('') + '</div>';
+  }
+  $('content').innerHTML = html;
+
+  $('content').querySelectorAll('.folder').forEach(b => b.onclick = () => {
+    history.pushState({ id: b.dataset.id }, '', '?id=' + encodeURIComponent(rootId) + '&f=' + encodeURIComponent(b.dataset.id));
+    show(b.dataset.id, false);
+  });
+
+  // 封面縮圖
+  const covers = [...$('content').querySelectorAll('img[data-cover]')];
+  pool(covers, 4, async img => {
+    try {
+      const r = await api('file=' + encodeURIComponent(img.dataset.cover) + '&thumb=1');
+      if (my === session) img.src = 'data:image/png;base64,' + r.data;
+    } catch (_) {}
+  });
+
+  if (res.files.length) await prepareFiles(res.files, my);
+}
+
+async function prepareFiles(list, my) {
+  $('dock').style.display = 'block';
+  $('btn').disabled = true;
+  $('btn').textContent = `準備中… 0 / ${list.length}`;
+  hint('');
+  const loaded = new Array(list.length);
+  let done = 0;
+  try {
+    await pool(list, 8, async (f, i) => {
+      const file = await loadFile(f);
+      if (my !== session) return;
+      loaded[i] = file;
+      const img = $('img' + i); if (img) img.src = URL.createObjectURL(file);
       $('btn').textContent = `準備中… ${++done} / ${list.length}`;
     });
-
-    $('btn').disabled = false;
-    if (isMobile && canShareFiles()) {
-      $('btn').textContent = `存到相簿（${files.length} 張）`;
-      hint(isIOS ? `按下後選「儲存 ${files.length} 張影像」` : '按下後選擇「相簿」或「儲存到裝置」');
-    } else if (isMobile) {
-      $('btn').textContent = '下載全部（zip）';
-      hint('這個瀏覽器不支援直接存相簿；也可以長按每張圖片儲存');
-    } else {
-      $('btn').textContent = `下載全部圖片（${files.length} 張）`;
-      hint('會下載成一個 zip 檔');
-    }
-  })
-  .catch(e => {
-    if (!files.length && !$('grid').querySelector('img')) { $('title').textContent = '無法載入圖片'; $('grid').innerHTML = ''; }
-    $('btn').textContent = '無法下載';
-    hint(e.message || '網路錯誤，請重新整理再試一次', true);
-  });
+  } catch (e) {
+    if (my !== session) return;
+    $('btn').textContent = '無法下載'; hint(e.message, true); return;
+  }
+  if (my !== session) return;
+  files = loaded;
+  $('btn').disabled = false;
+  if (isMobile && canShareFiles()) {
+    $('btn').textContent = `存到相簿（${files.length} 張）`;
+    hint(isIOS ? `按下後選「儲存 ${files.length} 張影像」` : '按下後選擇「相簿」或「儲存到裝置」');
+  } else if (isMobile) {
+    $('btn').textContent = '下載全部（zip）';
+    hint('這個瀏覽器不支援直接存相簿；也可以長按每張圖片儲存');
+  } else {
+    $('btn').textContent = `下載全部圖片（${files.length} 張）`;
+    hint('會下載成一個 zip 檔');
+  }
+}
 
 $('btn').onclick = async () => {
   if (isMobile && canShareFiles()) {
-    try {
-      await navigator.share({ files });
-      hint('完成！到相簿看看吧');
-    } catch (e) {
-      if (e.name !== 'AbortError') hint('沒有成功，請再按一次，或長按圖片儲存', true);
-    }
+    try { await navigator.share({ files }); hint('完成！到相簿看看吧'); }
+    catch (e) { if (e.name !== 'AbortError') hint('沒有成功，請再按一次，或長按圖片儲存', true); }
     return;
   }
-  // 電腦：打包 zip
   $('btn').disabled = true; hint('打包中…');
   try {
     if (!window.JSZip) await new Promise((ok, bad) => {
@@ -156,23 +210,31 @@ $('btn').onclick = async () => {
       s.onload = ok; s.onerror = () => bad(new Error('打包工具載入失敗'));
       document.head.appendChild(s);
     });
-    const zip = new JSZip();
-    const used = {};
+    const zip = new JSZip(), used = {};
     files.forEach(f => {
       let n = f.name;
       if (used[n]) { const d = n.lastIndexOf('.'); n = n.slice(0, d) + ` (${++used[f.name]})` + n.slice(d); } else used[n] = 1;
       zip.file(n, f);
     });
-    const blob = await zip.generateAsync({ type: 'blob' });
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = folderName + '.zip';
+    a.href = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
+    a.download = folderName + '.zip';
     document.body.appendChild(a); a.click(); a.remove();
     hint('下載完成');
-  } catch (e) {
-    hint(e.message, true);
-  }
+  } catch (e) { hint(e.message, true); }
   $('btn').disabled = false;
 };
+
+$('back').onclick = () => history.back();
+window.onpopstate = () => {
+  const f = new URLSearchParams(location.search).get('f');
+  f ? show(f, false) : show(rootId, true);
+};
+
+// 啟動：網址有 &f= 就直接進子資料夾
+const startF = new URLSearchParams(location.search).get('f');
+if (startF) { history.replaceState(null, '', '?id=' + encodeURIComponent(rootId)); history.pushState(null, '', '?id=' + encodeURIComponent(rootId) + '&f=' + encodeURIComponent(startF)); show(startF, false); }
+else show(rootId, true);
 </script>
 </body>
 </html>
