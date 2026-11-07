@@ -46,7 +46,7 @@
 
 <script>
 // ▼ 換成你的 Apps Script 部署網址（結尾 /exec）
-const API = 'https://script.google.com/macros/s/AKfycbwg-6C1gZP9VdbWCAaUfIJ9bO4dbPBz5bRP9KgZyj858miux_6v0knYQ4DldYgKnkR4/exec';
+const API = 'https://script.google.com/macros/s/AKfycby26iYK8y7DopOm2Vi-I9hKp0bsgu7SFUpwl5EGShHTGkIZF9OVWLxUSZ0BV4F89Ssi/exec';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -114,7 +114,7 @@ fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
 
     let done = 0;
     $('btn').textContent = `準備中… 0 / ${list.length}`;
-    files = await loadAll(list, 5, (i, file) => {
+    files = await loadAll(list, 8, (i, file) => {
       $('img' + i).src = URL.createObjectURL(file);
       $('btn').textContent = `準備中… ${++done} / ${list.length}`;
     });
