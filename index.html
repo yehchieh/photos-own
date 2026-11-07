@@ -35,12 +35,12 @@
   #sub:empty { margin:0 0 36px; }
 
   /* 網格：格線相連，不留縫 */
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:0;
-          border-top:var(--hair); border-left:var(--hair); }
-  .grid:has(.folder) { grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); counter-reset:n; }
+  /* 尺寸固定：每格同寬，不隨螢幕拉伸 */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,200px); gap:0; justify-content:start;
+          border-top:var(--hair); border-left:var(--hair); width:fit-content; max-width:100%; }
+  .grid:has(.folder) { grid-template-columns:repeat(auto-fill,240px); counter-reset:n; }
   @media (max-width:480px) {
-    .grid { grid-template-columns:repeat(2,1fr); }
-    .grid:has(.folder) { grid-template-columns:1fr; }
+    .grid, .grid:has(.folder) { grid-template-columns:repeat(2,1fr); width:auto; }
   }
 
   .card { background:var(--bg); border:0; border-right:var(--hair); border-bottom:var(--hair); border-radius:0; overflow:hidden; }
@@ -53,8 +53,11 @@
   /* 資料夾卡：大編號、大名稱，點按反白 */
   .folder { cursor:pointer; text-align:left; padding:0; font:inherit; color:inherit; counter-increment:n;
             transition:background .12s, color .12s; }
-  .folder img { filter:grayscale(1); }
-  .folder div { font-size:clamp(26px, 3.4vw, 36px); line-height:1.1; color:var(--ink); padding:16px 16px 20px; }
+  .folder div { font-size:clamp(20px, 3vw, 28px); line-height:1.15; color:var(--ink); padding:14px 14px 18px; height:9.2em;
+                overflow:hidden; display:flex; flex-direction:column; }
+  .card div { min-height:0; }
+  .card:not(.folder) div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .folder small { margin-top:auto !important; }
   .folder div::before { content:counter(n, decimal-leading-zero); display:block; font-size:13px; letter-spacing:.2em;
                         color:var(--gray); margin-bottom:10px; }
   .folder small { display:block; color:var(--gray); font-size:14px; letter-spacing:.12em; margin-top:10px; }
