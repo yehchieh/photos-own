@@ -14,6 +14,7 @@
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
   @media (max-width:480px) { .grid { grid-template-columns:repeat(2,1fr); } }
   .card { background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .card img:not([src]) { visibility:hidden; }
   .card img { width:100%; aspect-ratio:1; object-fit:contain; display:block;
     background:repeating-conic-gradient(#f1efea 0% 25%, #fff 0% 50%) 50%/16px 16px; }
   .card div { padding:6px 8px; font-size:11px; color:#666; word-break:break-all; }
@@ -60,18 +61,36 @@ let files = [], folderName = 'images';
 
 function hint(msg, err) { $('hint').textContent = msg; $('hint').className = err ? 'err' : ''; }
 function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-const IMG = id => 'https://lh3.googleusercontent.com/d/' + id;
+function b64ToFile(b64, name) {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: 'image/png' });
+}
 async function loadFile(f, tries = 3) {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetch(IMG(f.id) + '=s0');
-      if (!r.ok) throw new Error(r.status);
-      return new File([await r.blob()], f.name, { type: 'image/png' });
+      const res = await fetch(API + '?file=' + encodeURIComponent(f.id)).then(r => r.json());
+      if (!res.ok) throw new Error(res.error);
+      return b64ToFile(res.data, f.name);
     } catch (e) {
       if (i >= tries - 1) throw new Error('圖片下載失敗，請重新整理再試一次');
-      await new Promise(ok => setTimeout(ok, 800 * (i + 1)));
+      await new Promise(ok => setTimeout(ok, 1000 * (i + 1)));
     }
   }
+}
+// 同時最多 limit 張，避免 Google 擋太多同時請求
+async function loadAll(list, limit, onEach) {
+  const result = new Array(list.length);
+  let next = 0;
+  async function worker() {
+    while (next < list.length) {
+      const i = next++;
+      result[i] = await loadFile(list[i]);
+      onEach(i, result[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return result;
 }
 function canShareFiles() {
   try { return !!(navigator.canShare && files.length && navigator.canShare({ files })); } catch { return false; }
@@ -89,17 +108,16 @@ fetch(API + (folderId ? '?id=' + encodeURIComponent(folderId) : ''))
     $('title').textContent = folderName;
     document.title = folderName;
     $('sub').textContent = `共 ${list.length} 張圖片`;
-    // 先顯示縮圖，客戶馬上看得到
-    $('grid').innerHTML = list.map(f => `
-      <div class="card"><img src="${IMG(f.id)}=w400" alt=""><div>${esc(f.name)}</div></div>`).join('');
+    // 先放空卡片，每張圖下載好就顯示
+    $('grid').innerHTML = list.map((f, i) => `
+      <div class="card"><img id="img${i}" alt=""><div>${esc(f.name)}</div></div>`).join('');
 
-    // 同時下載原圖
     let done = 0;
     $('btn').textContent = `準備中… 0 / ${list.length}`;
-    files = await Promise.all(list.map(f => loadFile(f).then(file => {
+    files = await loadAll(list, 5, (i, file) => {
+      $('img' + i).src = URL.createObjectURL(file);
       $('btn').textContent = `準備中… ${++done} / ${list.length}`;
-      return file;
-    })));
+    });
 
     $('btn').disabled = false;
     if (isMobile && canShareFiles()) {
